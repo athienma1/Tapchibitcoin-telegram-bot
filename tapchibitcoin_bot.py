@@ -53,19 +53,12 @@ def get_rss_data():
             print(f"XML parse error: {e}")
             return None
             
-        namespaces = {
-            'media': 'http://search.yahoo.com/mrss/',
-            'content': 'http://purl.org/rss/1.0/modules/content/'
-        }
-        
         news_items = []
         for item in root.findall('.//item'):
             try:
-                title_elem = item.find('title')
                 link_elem = item.find('link')
                 pub_date_elem = item.find('pubDate')
                 
-                title = title_elem.text if title_elem is not None else "No title"
                 link = link_elem.text if link_elem is not None else "#"
                 pub_date = pub_date_elem.text if pub_date_elem is not None else ""
 
@@ -79,7 +72,6 @@ def get_rss_data():
                         pub_date_obj = datetime.now()
                 
                 news_items.append({
-                    'title': title,
                     'link': link, 
                     'pub_date_obj': pub_date_obj
                 })
@@ -110,7 +102,7 @@ def send_telegram_message(message):
             "chat_id": CHAT_ID,
             "text": message,
             "parse_mode": "HTML",
-            "disable_web_page_preview": False  # QUAN TRỌNG: để Telegram tự tạo preview
+            "disable_web_page_preview": False
         }
         
         response = requests.post(url, data=data, timeout=10)
@@ -129,7 +121,6 @@ def load_sent_links():
         return []
     
     try:
-        print(f"Connecting to Gist: {GIST_ID}")
         headers = {
             'Authorization': f'token {GIST_TOKEN}',
             'Accept': 'application/vnd.github.v3+json'
@@ -140,8 +131,6 @@ def load_sent_links():
             headers=headers,
             timeout=10
         )
-        
-        print(f"Gist response status: {response.status_code}")
         
         if response.status_code == 200:
             gist_data = response.json()
@@ -168,8 +157,6 @@ def save_sent_links(links):
         if len(links) > 200:
             links = links[-200:]
         
-        print(f"Saving {len(links)} links to Gist...")
-        
         # Prepare data for Gist update
         data = {
             "files": {
@@ -190,8 +177,6 @@ def save_sent_links(links):
             json=data,
             timeout=10
         )
-        
-        print(f"Gist save response: {response.status_code}")
         
         if response.status_code == 200:
             print(f"Saved {len(links)} links to Gist")
@@ -246,7 +231,6 @@ def main():
     for i, item in enumerate(items_to_send):
         try:
             print(f"\nSending item {i+1}/{len(items_to_send)}...")
-            print(f"Time: {item['pub_date_obj']}")
             
             # CHỈ GỬI LINK - Telegram tự tạo preview
             message = item['link']
