@@ -109,31 +109,10 @@ def get_rss_data():
         traceback.print_exc()
         return None
 
-def send_telegram_photo(photo_url, caption):
-    try:
-        if not BOT_TOKEN or not CHAT_ID:
-            return False
-            
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-        data = {
-            "chat_id": CHAT_ID,
-            "photo": photo_url,
-            "caption": caption,
-            "parse_mode": "HTML"
-        }
-        
-        response = requests.post(url, data=data, timeout=15)
-        result = response.json()
-        
-        return result.get('ok', False)
-            
-    except Exception as e:
-        print(f"Photo send error: {e}")
-        return False
-
 def send_telegram_message(message):
     try:
         if not BOT_TOKEN or not CHAT_ID:
+            print("Missing BOT_TOKEN or CHAT_ID")
             return False
             
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -147,7 +126,11 @@ def send_telegram_message(message):
         response = requests.post(url, data=data, timeout=10)
         result = response.json()
         
-        return result.get('ok', False)
+        if result.get('ok', False):
+            return True
+        else:
+            print(f"Telegram API error: {result}")
+            return False
             
     except Exception as e:
         print(f"Message send error: {e}")
@@ -157,10 +140,9 @@ def load_sent_links():
     """Load sent links from GitHub Gist"""
     if not GIST_TOKEN or not GIST_ID:
         print("GIST_TOKEN or GIST_ID not configured")
-        return []
+        return set()
     
     try:
-        print(f"Connecting to Gist: {GIST_ID}")
         headers = {
             'Authorization': f'token {GIST_TOKEN}',
             'Accept': 'application/vnd.github.v3+json'
@@ -172,21 +154,23 @@ def load_sent_links():
             timeout=10
         )
         
-        print(f"Gist response status: {response.status_code}")
-        
         if response.status_code == 200:
             gist_data = response.json()
-            content = gist_data['files']['sent_links.json']['content']
-            sent_links = json.loads(content)
-            print(f"Loaded {len(sent_links)} links from Gist")
-            return sent_links
+            if 'sent_links.json' in gist_data['files']:
+                content = gist_data['files']['sent_links.json']['content']
+                sent_links = json.loads(content)
+                print(f"Loaded {len(sent_links)} links from Gist")
+                return set(sent_links)
+            else:
+                print("sent_links.json not found in Gist")
+                return set()
         else:
             print(f"Error loading Gist: {response.status_code}")
-            return []
+            return set()
             
     except Exception as e:
         print(f"Gist connection error: {e}")
-        return []
+        return set()
 
 def save_sent_links(links):
     """Save sent links to GitHub Gist"""
@@ -195,17 +179,16 @@ def save_sent_links(links):
         return False
     
     try:
-        # Keep only latest 200 links
-        if len(links) > 200:
-            links = links[-200:]
+        # Chuyển set thành list và giới hạn số lượng
+        links_list = list(links)
+        if len(links_list) > 200:
+            links_list = links_list[-200:]
         
-        print(f"Saving {len(links)} links to Gist...")
-        
-        # Prepare data for Gist update
+        # Chuẩn bị dữ liệu để cập nhật Gist
         data = {
             "files": {
                 "sent_links.json": {
-                    "content": json.dumps(links, ensure_ascii=False, indent=2)
+                    "content": json.dumps(links_list, ensure_ascii=False, indent=2)
                 }
             }
         }
@@ -222,10 +205,8 @@ def save_sent_links(links):
             timeout=10
         )
         
-        print(f"Gist save response: {response.status_code}")
-        
         if response.status_code == 200:
-            print(f"Saved {len(links)} links to Gist")
+            print(f"Saved {len(links_list)} links to Gist")
             return True
         else:
             print(f"Error saving Gist: {response.status_code}")
@@ -235,8 +216,8 @@ def save_sent_links(links):
         print(f"Gist save error: {e}")
         return False
 
-def format_caption(item):
-    """Format caption with link at bottom"""
+def format_message(item):
+    """Format message with link at bottom"""
     title = item['title']
     description = item['description']
     
@@ -244,18 +225,18 @@ def format_caption(item):
     if description.startswith(title):
         description = description[len(title):].strip()
     
-    # Limit description length (caption has 1024 char limit)
+    # Limit description length
     if len(description) > 800:
         description = description[:800] + "..."
     
-    # Format caption: title + description + link at bottom
-    caption = f"{title}\n\n{description}\n\n➡️ Read more: {item['link']}"
+    # Format message: title + description + link at bottom
+    message = f"<b>{title}</b>\n\n{description}\n\n➡️ Đọc tiếp: {item['link']}"
     
-    return caption
+    return message
 
 def main():
     print("=" * 60)
-    print("🤖 Starting Coin68 Telegram Bot")
+    print("🤖 Starting TapchiBitcoin Telegram Bot")
     print("=" * 60)
     
     debug_env()
@@ -283,46 +264,28 @@ def main():
         sys.exit(0)
     
     # Sort by time: oldest first, newest last
-    new_items.sort(key=lambda x: x['pub_date_obj'])
+    new_items.sort(key=lambda x: x['pub_date'])
     
     # Limit number of items to send
     items_to_send = new_items[:MAX_NEWS_PER_RUN]
     print(f"Will send {len(items_to_send)} items")
-    print("Sending order: Old → New (newest will be at bottom)")
     
     # Send news
     success_count = 0
     for i, item in enumerate(items_to_send):
         try:
-            print(f"\nSending item {i+1}/{len(items_to_send)}...")
-            print(f"Time: {item['pub_date_obj']}")
+            print(f"\nSending item {i+1}/{len(items_to_send)}: {item['title']}")
             
-            # Format caption with link at bottom
-            caption = format_caption(item)
+            # Format message
+            message = format_message(item)
             
-            # Send photo with caption if image available
-            if item['image_url']:
-                if send_telegram_photo(item['image_url'], caption):
-                    sent_links.append(item['link'])
-                    success_count += 1
-                    print(f"✅ Item {i+1} sent successfully with photo")
-                else:
-                    # Fallback: send as text if photo fails
-                    print("🔄 Photo send failed, trying text...")
-                    if send_telegram_message(caption):
-                        sent_links.append(item['link'])
-                        success_count += 1
-                        print(f"✅ Item {i+1} sent successfully as text")
-                    else:
-                        print(f"❌ Item {i+1} failed")
+            # Send message
+            if send_telegram_message(message):
+                sent_links.add(item['link'])
+                success_count += 1
+                print(f"✅ Item {i+1} sent successfully")
             else:
-                # Send as text if no image
-                if send_telegram_message(caption):
-                    sent_links.append(item['link'])
-                    success_count += 1
-                    print(f"✅ Item {i+1} sent successfully as text")
-                else:
-                    print(f"❌ Item {i+1} failed")
+                print(f"❌ Item {i+1} failed")
             
             # Wait between messages
             if i < len(items_to_send) - 1:
@@ -332,7 +295,8 @@ def main():
             print(f"❌ Error sending item {i+1}: {e}")
     
     # Save sent links
-    save_sent_links(sent_links)
+    if success_count > 0:
+        save_sent_links(sent_links)
     
     print("\n" + "=" * 60)
     print(f"🎉 COMPLETED! Sent {success_count}/{len(items_to_send)} new items")
