@@ -64,20 +64,20 @@ def get_rss_data():
                 link = link_elem.text if link_elem is not None else "#"
                 title = title_elem.text if title_elem is not None else "No Title"
                 
-                # Lấy mô tả và làm sạch HTML tags
+                # Láº¥y mĂ´ táº£ vĂ  lĂ m sáº¡ch HTML tags
                 description = description_elem.text if description_elem is not None else ""
                 description = re.sub('<[^<]+?>', '', description)  # Remove HTML tags
                 description = description.strip()
                 
-                # Giới hạn độ dài mô tả
+                # Giá»›i háº¡n Ä‘á»™ dĂ i mĂ´ táº£
                 if len(description) > 200:
                     description = description[:197] + "..."
                 
-                # Lấy pubDate và xử lý lỗi định dạng
+                # Láº¥y pubDate vĂ  xá»­ lĂ½ lá»—i Ä‘á»‹nh dáº¡ng
                 pub_date_elem = item.find('pubDate')
                 pub_date = pub_date_elem.text if pub_date_elem is not None else ""
                 
-                # Chuyển đổi pub_date thành timestamp để so sánh
+                # Chuyá»ƒn Ä‘á»•i pub_date thĂ nh timestamp Ä‘á»ƒ so sĂ¡nh
                 try:
                     pub_date_obj = datetime.strptime(pub_date, '%a, %d %b %Y %H:%M:%S %Z')
                 except ValueError:
@@ -115,7 +115,7 @@ def send_telegram_message(title, description, link):
             print("Missing BOT_TOKEN or CHAT_ID")
             return False
         
-        # Tạo tin nhắn theo định dạng giống như trong ảnh
+        # Táº¡o tin nháº¯n theo Ä‘á»‹nh dáº¡ng giá»‘ng nhÆ° trong áº£nh
         message = f"<b>{title}</b>\n\n{description}\n\n- Read more: {link}"
             
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -163,7 +163,7 @@ def load_sent_links():
                 content = gist_data['files']['sent_links.json']['content']
                 sent_links = json.loads(content)
                 print(f"Loaded {len(sent_links)} links from Gist")
-                return set(sent_links)  # Trả về set để tìm kiếm nhanh hơn
+                return set(sent_links)  # Tráº£ vá» set Ä‘á»ƒ tĂ¬m kiáº¿m nhanh hÆ¡n
             else:
                 print("sent_links.json not found in Gist")
                 return set()
@@ -182,12 +182,12 @@ def save_sent_links(links):
         return False
     
     try:
-        # Chuyển set thành list và giới hạn số lượng
+        # Chuyá»ƒn set thĂ nh list vĂ  giá»›i háº¡n sá»‘ lÆ°á»£ng
         links_list = list(links)
         if len(links_list) > 200:
             links_list = links_list[-200:]
         
-        # Chuẩn bị dữ liệu để cập nhật Gist
+        # Chuáº©n bá»‹ dá»¯ liá»‡u Ä‘á»ƒ cáº­p nháº­t Gist
         data = {
             "files": {
                 "sent_links.json": {
@@ -221,7 +221,7 @@ def save_sent_links(links):
 
 def main():
     print("=" * 60)
-    print("🤖 Starting TapchiBitcoin Telegram Bot")
+    print("đŸ¤– Starting TapchiBitcoin Telegram Bot")
     print("=" * 60)
     
     debug_env()
@@ -240,7 +240,7 @@ def main():
         print("No RSS data")
         sys.exit(1)
     
-    # Lọc tin chưa gửi
+    # Lá»c tin chÆ°a gá»­i
     new_items = [item for item in news_items if item['link'] not in sent_links]
     print(f"New items: {len(new_items)}")
     
@@ -248,41 +248,60 @@ def main():
         print("No new news")
         sys.exit(0)
     
-    # Sắp xếp theo thời gian: cũ nhất trước, mới nhất sau
+    # Sáº¯p xáº¿p theo thá»i gian: cÅ© nháº¥t trÆ°á»›c, má»›i nháº¥t sau
     new_items.sort(key=lambda x: x['pub_date'])
     
-    # Giới hạn số lượng tin gửi
+    # Giá»›i háº¡n sá»‘ lÆ°á»£ng tin gá»­i
     items_to_send = new_items[:MAX_NEWS_PER_RUN]
     print(f"Will send {len(items_to_send)} items")
     
-    # Gửi tin nhắn
-    success_count = 0
+    # Gá»­i tin nháº¯n
+     success_count = 0
     for i, item in enumerate(items_to_send):
         try:
-            print(f"\nSending item {i+1}/{len(items_to_send)}: {item['title']}")
+            print(f"\nSending item {i+1}/{len(items_to_send)}...")
+            print(f"Time: {item['pub_date_obj']}")
             
-            # Gửi tin nhắn với định dạng giống ảnh
-            if send_telegram_message(item['title'], item['description'], item['link']):
-                sent_links.add(item['link'])  # Sử dụng set để tránh trùng lặp
-                success_count += 1
-                print(f"✅ Item {i+1} sent successfully")
+            # Format caption with link at bottom
+            caption = format_caption(item)
+            
+            # Send photo with caption if image available
+            if item['image_url']:
+                if send_telegram_photo(item['image_url'], caption):
+                    sent_links.append(item['link'])
+                    success_count += 1
+                    print(f"âœ… Item {i+1} sent successfully with photo")
+                else:
+                    # Fallback: send as text if photo fails
+                    print("đŸ”„ Photo send failed, trying text...")
+                    if send_telegram_message(caption):
+                        sent_links.append(item['link'])
+                        success_count += 1
+                        print(f"âœ… Item {i+1} sent successfully as text")
+                    else:
+                        print(f"âŒ Item {i+1} failed")
             else:
-                print(f"❌ Item {i+1} failed")
+                # Send as text if no image
+                if send_telegram_message(caption):
+                    sent_links.append(item['link'])
+                    success_count += 1
+                    print(f"âœ… Item {i+1} sent successfully as text")
+                else:
+                    print(f"âŒ Item {i+1} failed")
             
-            # Chờ giữa các tin nhắn
+            # Wait between messages
             if i < len(items_to_send) - 1:
                 time.sleep(DELAY_BETWEEN_MESSAGES)
                 
         except Exception as e:
-            print(f"❌ Error sending item {i+1}: {e}")
-    
-    # Lưu sent links
+            print(f"âŒ Error sending item {i+1}: {e}")
+    # LÆ°u sent links
     if success_count > 0:
         save_sent_links(sent_links)
     
     print("\n" + "=" * 60)
-    print(f"🎉 COMPLETED! Sent {success_count}/{len(items_to_send)} new items")
-    print(f"💾 Total sent links: {len(sent_links)}")
+    print(f"đŸ‰ COMPLETED! Sent {success_count}/{len(items_to_send)} new items")
+    print(f"đŸ’¾ Total sent links: {len(sent_links)}")
     print("=" * 60)
     
     if success_count == 0:
