@@ -62,30 +62,13 @@ def get_rss_data():
         for item in root.findall('.//item'):
             try:
                 title_elem = item.find('title')
-                desc_elem = item.find('description') 
                 link_elem = item.find('link')
                 pub_date_elem = item.find('pubDate')
                 
                 title = title_elem.text if title_elem is not None else "No title"
-                description = desc_elem.text if desc_elem is not None else "No description"
                 link = link_elem.text if link_elem is not None else "#"
                 pub_date = pub_date_elem.text if pub_date_elem is not None else ""
 
-                # Get image from media:content
-                image_url = None
-                media_content = item.find('media:content', namespaces)
-                if media_content is not None and 'url' in media_content.attrib:
-                    image_url = media_content.attrib['url']
-                else:
-                    # Try to find image in description
-                    img_match = re.search(r'<img[^>]+src="([^">]+)"', description)
-                    if img_match:
-                        image_url = img_match.group(1)
-                
-                # Clean description
-                clean_description = re.sub('<[^<]+?>', '', description)
-                clean_description = clean_description.strip()
-                
                 # Convert pub_date to datetime object for sorting
                 try:
                     pub_date_obj = datetime.strptime(pub_date, '%a, %d %b %Y %H:%M:%S %Z')
@@ -96,10 +79,8 @@ def get_rss_data():
                         pub_date_obj = datetime.now()
                 
                 news_items.append({
-                    'title': title, 
-                    'description': clean_description,
+                    'title': title,
                     'link': link, 
-                    'image_url': image_url,
                     'pub_date_obj': pub_date_obj
                 })
                 
@@ -119,28 +100,6 @@ def get_rss_data():
         traceback.print_exc()
         return None
 
-def send_telegram_photo(photo_url, caption):
-    try:
-        if not BOT_TOKEN or not CHAT_ID:
-            return False
-            
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-        data = {
-            "chat_id": CHAT_ID,
-            "photo": photo_url,
-            "caption": caption,
-            "parse_mode": "HTML"
-        }
-        
-        response = requests.post(url, data=data, timeout=15)
-        result = response.json()
-        
-        return result.get('ok', False)
-            
-    except Exception as e:
-        print(f"Photo send error: {e}")
-        return False
-
 def send_telegram_message(message):
     try:
         if not BOT_TOKEN or not CHAT_ID:
@@ -151,7 +110,7 @@ def send_telegram_message(message):
             "chat_id": CHAT_ID,
             "text": message,
             "parse_mode": "HTML",
-            "disable_web_page_preview": False
+            "disable_web_page_preview": False  # QUAN TRỌNG: để Telegram tự tạo preview
         }
         
         response = requests.post(url, data=data, timeout=10)
@@ -245,24 +204,6 @@ def save_sent_links(links):
         print(f"Gist save error: {e}")
         return False
 
-def format_caption(item):
-    """Format caption with link at bottom"""
-    title = item['title']
-    description = item['description']
-    
-    # Remove duplication: if description starts with title, remove title from description
-    if description.startswith(title):
-        description = description[len(title):].strip()
-    
-    # Limit description length (caption has 1024 char limit)
-    if len(description) > 800:
-        description = description[:800] + "..."
-    
-    # Format caption: title + description + link at bottom
-    caption = f"{title}\n\n{description}\n\n➡️ Đọc tiếp: {item['link']}"
-    
-    return caption
-
 def main():
     print("=" * 60)
     print("🤖 Starting TapchiBitcoin Telegram Bot")
@@ -300,39 +241,23 @@ def main():
     print(f"Will send {len(items_to_send)} items")
     print("Sending order: Old → New (newest will be at bottom)")
     
-    # Send news
+    # Send news - CHỈ GỬI LINK
     success_count = 0
     for i, item in enumerate(items_to_send):
         try:
             print(f"\nSending item {i+1}/{len(items_to_send)}...")
             print(f"Time: {item['pub_date_obj']}")
             
-            # Format caption with link at bottom
-            caption = format_caption(item)
+            # CHỈ GỬI LINK - Telegram tự tạo preview
+            message = item['link']
             
-            # Send photo with caption if image available
-            if item['image_url']:
-                if send_telegram_photo(item['image_url'], caption):
-                    sent_links.append(item['link'])
-                    success_count += 1
-                    print(f"✅ Item {i+1} sent successfully with photo")
-                else:
-                    # Fallback: send as text if photo fails
-                    print("🔄 Photo send failed, trying text...")
-                    if send_telegram_message(caption):
-                        sent_links.append(item['link'])
-                        success_count += 1
-                        print(f"✅ Item {i+1} sent successfully as text")
-                    else:
-                        print(f"❌ Item {i+1} failed")
+            # Gửi tin nhắn
+            if send_telegram_message(message):
+                sent_links.append(item['link'])
+                success_count += 1
+                print(f"✅ Item {i+1} sent successfully")
             else:
-                # Send as text if no image
-                if send_telegram_message(caption):
-                    sent_links.append(item['link'])
-                    success_count += 1
-                    print(f"✅ Item {i+1} sent successfully as text")
-                else:
-                    print(f"❌ Item {i+1} failed")
+                print(f"❌ Item {i+1} failed")
             
             # Wait between messages
             if i < len(items_to_send) - 1:
