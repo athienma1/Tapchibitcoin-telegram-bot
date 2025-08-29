@@ -59,19 +59,9 @@ def get_rss_data():
             try:
                 link_elem = item.find('link')
                 title_elem = item.find('title')
-                description_elem = item.find('description')
                 
                 link = link_elem.text if link_elem is not None else "#"
                 title = title_elem.text if title_elem is not None else "No Title"
-                
-                # Lấy mô tả và làm sạch HTML tags
-                description = description_elem.text if description_elem is not None else ""
-                description = re.sub('<[^<]+?>', '', description)  # Remove HTML tags
-                description = description.strip()
-                
-                # Giới hạn độ dài mô tả
-                if len(description) > 200:
-                    description = description[:197] + "..."
                 
                 # Lấy pubDate và xử lý lỗi định dạng
                 pub_date_elem = item.find('pubDate')
@@ -89,7 +79,6 @@ def get_rss_data():
                 news_items.append({
                     'link': link.strip(),
                     'title': title,
-                    'description': description,
                     'pub_date': pub_date_obj.timestamp()
                 })
                 
@@ -109,14 +98,11 @@ def get_rss_data():
         traceback.print_exc()
         return None
 
-def send_telegram_message(title, description, link):
+def send_telegram_message(message):
     try:
         if not BOT_TOKEN or not CHAT_ID:
             print("Missing BOT_TOKEN or CHAT_ID")
             return False
-        
-        # Tạo tin nhắn theo định dạng giống như trong ảnh
-        message = f"<b>{title}</b>\n\n{description}\n\n- Read more: {link}"
             
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         data = {
@@ -255,46 +241,30 @@ def main():
     items_to_send = new_items[:MAX_NEWS_PER_RUN]
     print(f"Will send {len(items_to_send)} items")
     
-    # Gửi tin nhắn
-     success_count = 0
+    # Gửi tin nhắn - CHỈ GỬI LINK
+    success_count = 0
     for i, item in enumerate(items_to_send):
         try:
-            print(f"\nSending item {i+1}/{len(items_to_send)}...")
-            print(f"Time: {item['pub_date_obj']}")
+            print(f"\nSending item {i+1}/{len(items_to_send)}: {item['link']}")
             
-            # Format caption with link at bottom
-            caption = format_caption(item)
+            # CHỈ GỬI LINK - Telegram tự tạo preview
+            message = item['link']
             
-            # Send photo with caption if image available
-            if item['image_url']:
-                if send_telegram_photo(item['image_url'], caption):
-                    sent_links.append(item['link'])
-                    success_count += 1
-                    print(f"✅ Item {i+1} sent successfully with photo")
-                else:
-                    # Fallback: send as text if photo fails
-                    print("🔄 Photo send failed, trying text...")
-                    if send_telegram_message(caption):
-                        sent_links.append(item['link'])
-                        success_count += 1
-                        print(f"✅ Item {i+1} sent successfully as text")
-                    else:
-                        print(f"❌ Item {i+1} failed")
+            # Gửi tin nhắn
+            if send_telegram_message(message):
+                sent_links.add(item['link'])  # Sử dụng set để tránh trùng lặp
+                success_count += 1
+                print(f"✅ Item {i+1} sent successfully")
             else:
-                # Send as text if no image
-                if send_telegram_message(caption):
-                    sent_links.append(item['link'])
-                    success_count += 1
-                    print(f"✅ Item {i+1} sent successfully as text")
-                else:
-                    print(f"❌ Item {i+1} failed")
+                print(f"❌ Item {i+1} failed")
             
-            # Wait between messages
+            # Chờ giữa các tin nhắn
             if i < len(items_to_send) - 1:
                 time.sleep(DELAY_BETWEEN_MESSAGES)
                 
         except Exception as e:
             print(f"❌ Error sending item {i+1}: {e}")
+    
     # Lưu sent links
     if success_count > 0:
         save_sent_links(sent_links)
