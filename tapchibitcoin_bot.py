@@ -69,9 +69,24 @@ def get_rss_data():
                 description = re.sub('<[^<]+?>', '', description)  # Remove HTML tags
                 description = description.strip()
                 
+                # QUAN TRỌNG: Loại bỏ hoàn toàn tiêu đề nếu có trong description
+                # Chỉ giữ lại phần mô tả thực sự
+                if title in description:
+                    description = description.replace(title, '').strip()
+                
+                # Loại bỏ các từ dư thừa thường gặp
+                redundant_phrases = [
+                    "Đọc tiếp", "Xem thêm", "Theo dõi", 
+                    "Read more", "Continue reading", "TapchiBitcoin"
+                ]
+                
+                for phrase in redundant_phrases:
+                    if phrase in description:
+                        description = description.split(phrase)[0].strip()
+                
                 # Giới hạn độ dài mô tả
-                if len(description) > 200:
-                    description = description[:197] + "..."
+                if len(description) > 150:
+                    description = description[:147] + "..."
                 
                 # Lấy pubDate và xử lý lỗi định dạng
                 pub_date_elem = item.find('pubDate')
@@ -109,11 +124,17 @@ def get_rss_data():
         traceback.print_exc()
         return None
 
-def send_telegram_message(message):
+def send_telegram_message(title, description, link):
     try:
         if not BOT_TOKEN or not CHAT_ID:
             print("Missing BOT_TOKEN or CHAT_ID")
             return False
+        
+        # Tạo tin nhắn CHỈ với tiêu đề và link nếu description trùng hoặc rỗng
+        if not description or description == title or len(description) < 10:
+            message = f"<b>{title}</b>\n\n➡️ Đọc tiếp: {link}"
+        else:
+            message = f"<b>{title}</b>\n\n{description}\n\n➡️ Đọc tiếp: {link}"
             
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
         data = {
@@ -216,27 +237,9 @@ def save_sent_links(links):
         print(f"Gist save error: {e}")
         return False
 
-def format_message(item):
-    """Format message with link at bottom"""
-    title = item['title']
-    description = item['description']
-    
-    # Remove duplication: if description starts with title, remove title from description
-    if description.startswith(title):
-        description = description[len(title):].strip()
-    
-    # Limit description length
-    if len(description) > 800:
-        description = description[:800] + "..."
-    
-    # Format message: title + description + link at bottom
-    message = f"<b>{title}</b>\n\n{description}\n\n➡️ Đọc tiếp: {item['link']}"
-    
-    return message
-
 def main():
     print("=" * 60)
-    print("🤖 Starting TapchiBitcoin Telegram Bot")
+    print("🤖 Starting TapchiBitcoin Telegram Bot (NO DUPLICATION)")
     print("=" * 60)
     
     debug_env()
@@ -255,7 +258,7 @@ def main():
         print("No RSS data")
         sys.exit(1)
     
-    # Filter unsent news
+    # Lọc tin chưa gửi
     new_items = [item for item in news_items if item['link'] not in sent_links]
     print(f"New items: {len(new_items)}")
     
@@ -263,38 +266,37 @@ def main():
         print("No new news")
         sys.exit(0)
     
-    # Sort by time: oldest first, newest last
+    # Sắp xếp theo thời gian: cũ nhất trước, mới nhất sau
     new_items.sort(key=lambda x: x['pub_date'])
     
-    # Limit number of items to send
+    # Giới hạn số lượng tin gửi
     items_to_send = new_items[:MAX_NEWS_PER_RUN]
     print(f"Will send {len(items_to_send)} items")
     
-    # Send news
+    # Gửi tin nhắn
     success_count = 0
     for i, item in enumerate(items_to_send):
         try:
-            print(f"\nSending item {i+1}/{len(items_to_send)}: {item['title']}")
+            print(f"\nSending item {i+1}/{len(items_to_send)}")
+            print(f"Title: {item['title']}")
+            print(f"Description: {item['description'][:50]}...")  # Show first 50 chars
             
-            # Format message
-            message = format_message(item)
-            
-            # Send message
-            if send_telegram_message(message):
+            # Gửi tin nhắn
+            if send_telegram_message(item['title'], item['description'], item['link']):
                 sent_links.add(item['link'])
                 success_count += 1
                 print(f"✅ Item {i+1} sent successfully")
             else:
                 print(f"❌ Item {i+1} failed")
             
-            # Wait between messages
+            # Chờ giữa các tin nhắn
             if i < len(items_to_send) - 1:
                 time.sleep(DELAY_BETWEEN_MESSAGES)
                 
         except Exception as e:
             print(f"❌ Error sending item {i+1}: {e}")
     
-    # Save sent links
+    # Lưu sent links
     if success_count > 0:
         save_sent_links(sent_links)
     
