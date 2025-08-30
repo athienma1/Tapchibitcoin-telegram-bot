@@ -56,7 +56,10 @@ def get_rss_data():
         for item in root.findall('.//item'):
             try:
                 link_elem = item.find('link')
+                title_elem = item.find('title')
+                
                 link = link_elem.text if link_elem is not None else "#"
+                title = title_elem.text if title_elem is not None else "No Title"
                 
                 # Lấy pubDate để sắp xếp
                 pub_date_elem = item.find('pubDate')
@@ -70,6 +73,7 @@ def get_rss_data():
                 
                 news_items.append({
                     'link': link.strip(),
+                    'title': title,
                     'pub_date': pub_date_obj.timestamp()
                 })
                 
@@ -174,7 +178,7 @@ def save_sent_links(links):
 
 def main():
     print("=" * 60)
-    print("🤖 Starting TapchiBitcoin Telegram Bot (LINK ONLY)")
+    print("🤖 Starting TapchiBitcoin Telegram Bot (LINK ONLY - BOTTOM)")
     print("=" * 60)
     
     debug_env()
@@ -208,14 +212,16 @@ def main():
     items_to_send = new_items[:MAX_NEWS_PER_RUN]
     print(f"Will send {len(items_to_send)} items")
     
-    # Send only links
+    # Send only links (at the bottom)
     success_count = 0
     for i, item in enumerate(items_to_send):
         try:
             print(f"Sending item {i+1}/{len(items_to_send)}")
             
-            # CHỈ GỬI LINK - không có gì khác
-            if send_telegram_message(item['link']):
+            # CHỈ GỬI LINK - đưa xuống dưới cùng bằng cách thêm dấu xuống dòng
+            message = f"\n\n{item['link']}"
+            
+            if send_telegram_message(message):
                 sent_links.add(item['link'])
                 success_count += 1
                 print(f"✅ Sent: {item['link']}")
