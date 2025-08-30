@@ -1,5 +1,6 @@
 import requests
 import xml.etree.ElementTree as ET
+import re
 import json
 import os
 import sys
@@ -29,7 +30,8 @@ def get_rss_data():
     try:
         print("Connecting to TapchiBitcoin RSS...")
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+            'Accept': 'application/xml, text/xml, */*'
         }
         
         response = requests.get(
@@ -57,11 +59,21 @@ def get_rss_data():
             try:
                 link_elem = item.find('link')
                 title_elem = item.find('title')
+                description_elem = item.find('description')
                 
                 link = link_elem.text if link_elem is not None else "#"
                 title = title_elem.text if title_elem is not None else "No Title"
                 
-                # Lấy pubDate để sắp xếp
+                # Lấy mô tả và làm sạch HTML tags
+                description = description_elem.text if description_elem is not None else ""
+                description = re.sub('<[^<]+?>', '', description)
+                description = description.strip()
+                
+                # Giới hạn độ dài mô tả
+                if len(description) > 150:
+                    description = description[:147] + "..."
+                
+                # Lấy pubDate
                 pub_date_elem = item.find('pubDate')
                 pub_date = pub_date_elem.text if pub_date_elem is not None else ""
                 
@@ -74,6 +86,7 @@ def get_rss_data():
                 news_items.append({
                     'link': link.strip(),
                     'title': title,
+                    'description': description,
                     'pub_date': pub_date_obj.timestamp()
                 })
                 
@@ -100,7 +113,8 @@ def send_telegram_message(message):
         data = {
             "chat_id": CHAT_ID,
             "text": message,
-            "disable_web_page_preview": False
+            "parse_mode": "HTML",
+            "disable_web_page_preview": True  # QUAN TRỌNG: TẮT PREVIEW
         }
         
         response = requests.post(url, data=data, timeout=10)
@@ -178,7 +192,7 @@ def save_sent_links(links):
 
 def main():
     print("=" * 60)
-    print("🤖 Starting TapchiBitcoin Telegram Bot (LINK ONLY - BOTTOM)")
+    print("🤖 Starting TapchiBitcoin Telegram Bot (LINK AT BOTTOM)")
     print("=" * 60)
     
     debug_env()
@@ -212,21 +226,21 @@ def main():
     items_to_send = new_items[:MAX_NEWS_PER_RUN]
     print(f"Will send {len(items_to_send)} items")
     
-    # Send only links (at the bottom)
+    # Send formatted messages
     success_count = 0
     for i, item in enumerate(items_to_send):
         try:
             print(f"Sending item {i+1}/{len(items_to_send)}")
             
-            # CHỈ GỬI LINK - đưa xuống dưới cùng bằng cách thêm dấu xuống dòng
-            message = f"\n\n{item['link']}"
+            # Tạo tin nhắn với link ở DƯỚI CÙNG
+            message = f"<b>{item['title']}</b>\n\n{item['description']}\n\n🔗 {item['link']}"
             
             if send_telegram_message(message):
                 sent_links.add(item['link'])
                 success_count += 1
-                print(f"✅ Sent: {item['link']}")
+                print(f"✅ Sent: {item['title']}")
             else:
-                print(f"❌ Failed: {item['link']}")
+                print(f"❌ Failed: {item['title']}")
             
             # Wait between messages
             if i < len(items_to_send) - 1:
