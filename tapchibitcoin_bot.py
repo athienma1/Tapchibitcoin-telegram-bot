@@ -69,6 +69,12 @@ def get_rss_data():
                 description = re.sub('<[^<]+?>', '', description)
                 description = description.strip()
                 
+                # Tìm ảnh trong description
+                image_url = None
+                img_match = re.search(r'<img[^>]+src="([^">]+)"', description_elem.text if description_elem is not None else "")
+                if img_match:
+                    image_url = img_match.group(1)
+                
                 # Giới hạn độ dài mô tả
                 if len(description) > 150:
                     description = description[:147] + "..."
@@ -87,6 +93,7 @@ def get_rss_data():
                     'link': link.strip(),
                     'title': title,
                     'description': description,
+                    'image_url': image_url,
                     'pub_date': pub_date_obj.timestamp()
                 })
                 
@@ -104,6 +111,28 @@ def get_rss_data():
         print(f"Unknown error: {e}")
         return None
 
+def send_telegram_photo(photo_url, caption):
+    try:
+        if not BOT_TOKEN or not CHAT_ID:
+            return False
+            
+        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
+        data = {
+            "chat_id": CHAT_ID,
+            "photo": photo_url,
+            "caption": caption,
+            "parse_mode": "HTML"
+        }
+        
+        response = requests.post(url, data=data, timeout=15)
+        result = response.json()
+        
+        return result.get('ok', False)
+            
+    except Exception as e:
+        print(f"Photo send error: {e}")
+        return False
+
 def send_telegram_message(message):
     try:
         if not BOT_TOKEN or not CHAT_ID:
@@ -114,7 +143,7 @@ def send_telegram_message(message):
             "chat_id": CHAT_ID,
             "text": message,
             "parse_mode": "HTML",
-            "disable_web_page_preview": True  # QUAN TRỌNG: TẮT PREVIEW
+            "disable_web_page_preview": True
         }
         
         response = requests.post(url, data=data, timeout=10)
@@ -192,7 +221,7 @@ def save_sent_links(links):
 
 def main():
     print("=" * 60)
-    print("🤖 Starting TapchiBitcoin Telegram Bot (LINK AT BOTTOM)")
+    print("🤖 Starting TapchiBitcoin Telegram Bot (WITH IMAGE)")
     print("=" * 60)
     
     debug_env()
@@ -226,21 +255,37 @@ def main():
     items_to_send = new_items[:MAX_NEWS_PER_RUN]
     print(f"Will send {len(items_to_send)} items")
     
-    # Send formatted messages
+    # Send messages with images
     success_count = 0
     for i, item in enumerate(items_to_send):
         try:
             print(f"Sending item {i+1}/{len(items_to_send)}")
             
-            # Tạo tin nhắn với link ở DƯỚI CÙNG
-            message = f"<b>{item['title']}</b>\n\n{item['description']}\n\n🔗 {item['link']}"
+            # Tạo caption với link ở DƯỚI CÙNG
+            caption = f"<b>{item['title']}</b>\n\n{item['description']}\n\n🔗 {item['link']}"
             
-            if send_telegram_message(message):
-                sent_links.add(item['link'])
-                success_count += 1
-                print(f"✅ Sent: {item['title']}")
+            # Gửi ảnh nếu có, nếu không thì gửi text
+            if item['image_url']:
+                if send_telegram_photo(item['image_url'], caption):
+                    sent_links.add(item['link'])
+                    success_count += 1
+                    print(f"✅ Sent with photo: {item['title']}")
+                else:
+                    # Fallback: gửi text nếu ảnh lỗi
+                    if send_telegram_message(caption):
+                        sent_links.add(item['link'])
+                        success_count += 1
+                        print(f"✅ Sent as text: {item['title']}")
+                    else:
+                        print(f"❌ Failed: {item['title']}")
             else:
-                print(f"❌ Failed: {item['title']}")
+                # Gửi text nếu không có ảnh
+                if send_telegram_message(caption):
+                    sent_links.add(item['link'])
+                    success_count += 1
+                    print(f"✅ Sent as text: {item['title']}")
+                else:
+                    print(f"❌ Failed: {item['title']}")
             
             # Wait between messages
             if i < len(items_to_send) - 1:
