@@ -1,6 +1,5 @@
 import requests
 import xml.etree.ElementTree as ET
-import re
 import json
 import os
 import sys
@@ -30,8 +29,7 @@ def get_rss_data():
     try:
         print("Connecting to TapchiBitcoin RSS...")
         headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-            'Accept': 'application/xml, text/xml, */*'
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36'
         }
         
         response = requests.get(
@@ -58,28 +56,9 @@ def get_rss_data():
         for item in root.findall('.//item'):
             try:
                 link_elem = item.find('link')
-                title_elem = item.find('title')
-                description_elem = item.find('description')
-                
                 link = link_elem.text if link_elem is not None else "#"
-                title = title_elem.text if title_elem is not None else "No Title"
                 
-                # Lấy mô tả và làm sạch HTML tags
-                description = description_elem.text if description_elem is not None else ""
-                description = re.sub('<[^<]+?>', '', description)
-                description = description.strip()
-                
-                # Tìm ảnh trong description
-                image_url = None
-                img_match = re.search(r'<img[^>]+src="([^">]+)"', description_elem.text if description_elem is not None else "")
-                if img_match:
-                    image_url = img_match.group(1)
-                
-                # Giới hạn độ dài mô tả
-                if len(description) > 150:
-                    description = description[:147] + "..."
-                
-                # Lấy pubDate
+                # Lấy pubDate để sắp xếp
                 pub_date_elem = item.find('pubDate')
                 pub_date = pub_date_elem.text if pub_date_elem is not None else ""
                 
@@ -91,9 +70,6 @@ def get_rss_data():
                 
                 news_items.append({
                     'link': link.strip(),
-                    'title': title,
-                    'description': description,
-                    'image_url': image_url,
                     'pub_date': pub_date_obj.timestamp()
                 })
                 
@@ -111,28 +87,6 @@ def get_rss_data():
         print(f"Unknown error: {e}")
         return None
 
-def send_telegram_photo(photo_url, caption):
-    try:
-        if not BOT_TOKEN or not CHAT_ID:
-            return False
-            
-        url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendPhoto"
-        data = {
-            "chat_id": CHAT_ID,
-            "photo": photo_url,
-            "caption": caption,
-            "parse_mode": "HTML"
-        }
-        
-        response = requests.post(url, data=data, timeout=15)
-        result = response.json()
-        
-        return result.get('ok', False)
-            
-    except Exception as e:
-        print(f"Photo send error: {e}")
-        return False
-
 def send_telegram_message(message):
     try:
         if not BOT_TOKEN or not CHAT_ID:
@@ -142,8 +96,7 @@ def send_telegram_message(message):
         data = {
             "chat_id": CHAT_ID,
             "text": message,
-            "parse_mode": "HTML",
-            "disable_web_page_preview": True
+            "disable_web_page_preview": False
         }
         
         response = requests.post(url, data=data, timeout=10)
@@ -221,7 +174,7 @@ def save_sent_links(links):
 
 def main():
     print("=" * 60)
-    print("🤖 Starting TapchiBitcoin Telegram Bot (WITH IMAGE)")
+    print("🤖 Starting TapchiBitcoin Telegram Bot (LINK ONLY)")
     print("=" * 60)
     
     debug_env()
@@ -255,37 +208,19 @@ def main():
     items_to_send = new_items[:MAX_NEWS_PER_RUN]
     print(f"Will send {len(items_to_send)} items")
     
-    # Send messages with images
+    # Send only links
     success_count = 0
     for i, item in enumerate(items_to_send):
         try:
             print(f"Sending item {i+1}/{len(items_to_send)}")
             
-            # Tạo caption với link ở DƯỚI CÙNG
-            caption = f"<b>{item['title']}</b>\n\n{item['description']}\n\n🔗 {item['link']}"
-            
-            # Gửi ảnh nếu có, nếu không thì gửi text
-            if item['image_url']:
-                if send_telegram_photo(item['image_url'], caption):
-                    sent_links.add(item['link'])
-                    success_count += 1
-                    print(f"✅ Sent with photo: {item['title']}")
-                else:
-                    # Fallback: gửi text nếu ảnh lỗi
-                    if send_telegram_message(caption):
-                        sent_links.add(item['link'])
-                        success_count += 1
-                        print(f"✅ Sent as text: {item['title']}")
-                    else:
-                        print(f"❌ Failed: {item['title']}")
+            # CHỈ GỬI LINK - không có gì khác
+            if send_telegram_message(item['link']):
+                sent_links.add(item['link'])
+                success_count += 1
+                print(f"✅ Sent: {item['link']}")
             else:
-                # Gửi text nếu không có ảnh
-                if send_telegram_message(caption):
-                    sent_links.add(item['link'])
-                    success_count += 1
-                    print(f"✅ Sent as text: {item['title']}")
-                else:
-                    print(f"❌ Failed: {item['title']}")
+                print(f"❌ Failed: {item['link']}")
             
             # Wait between messages
             if i < len(items_to_send) - 1:
