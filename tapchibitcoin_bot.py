@@ -69,24 +69,29 @@ def get_rss_data():
                 description = re.sub('<[^<]+?>', '', description)  # Remove HTML tags
                 description = description.strip()
                 
-                # QUAN TRỌNG: Loại bỏ hoàn toàn tiêu đề nếu có trong description
-                # Chỉ giữ lại phần mô tả thực sự
+                # QUAN TRỌNG: Xóa toàn bộ phần trùng lặp với tiêu đề
+                # Loại bỏ hoàn toàn tiêu đề nếu có trong description
                 if title in description:
                     description = description.replace(title, '').strip()
                 
-                # Loại bỏ các từ dư thừa thường gặp
-                redundant_phrases = [
-                    "Đọc tiếp", "Xem thêm", "Theo dõi", 
-                    "Read more", "Continue reading", "TapchiBitcoin"
+                # Xóa các cụm từ dư thừa thường gặp trong RSS TapchiBitcoin
+                redundant_patterns = [
+                    r'Tạp Chí Bitcoin.*$',
+                    r'Đọc tiếp.*$',
+                    r'Xem thêm.*$',
+                    r'Read more.*$',
+                    r'Theo dõi.*$',
                 ]
                 
-                for phrase in redundant_phrases:
-                    if phrase in description:
-                        description = description.split(phrase)[0].strip()
+                for pattern in redundant_patterns:
+                    description = re.sub(pattern, '', description, flags=re.IGNORECASE).strip()
+                
+                # Xóa dấu chấm, phẩy thừa ở cuối
+                description = re.sub(r'[.,;\s]+$', '', description)
                 
                 # Giới hạn độ dài mô tả
-                if len(description) > 150:
-                    description = description[:147] + "..."
+                if len(description) > 180:
+                    description = description[:177] + "..."
                 
                 # Lấy pubDate và xử lý lỗi định dạng
                 pub_date_elem = item.find('pubDate')
@@ -130,10 +135,12 @@ def send_telegram_message(title, description, link):
             print("Missing BOT_TOKEN or CHAT_ID")
             return False
         
-        # Tạo tin nhắn CHỈ với tiêu đề và link nếu description trùng hoặc rỗng
-        if not description or description == title or len(description) < 10:
+        # Tạo tin nhắn theo format mới - CHỈ 2 DÒNG
+        if not description or len(description) < 20:
+            # Nếu không có mô tả hoặc mô tả quá ngắn
             message = f"<b>{title}</b>\n\n➡️ Đọc tiếp: {link}"
         else:
+            # Format: Tiêu đề + Mô tả ngắn + Link riêng dòng
             message = f"<b>{title}</b>\n\n{description}\n\n➡️ Đọc tiếp: {link}"
             
         url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -239,7 +246,7 @@ def save_sent_links(links):
 
 def main():
     print("=" * 60)
-    print("🤖 Starting TapchiBitcoin Telegram Bot (NO DUPLICATION)")
+    print("🤖 Starting TapchiBitcoin Telegram Bot (CLEAN VERSION)")
     print("=" * 60)
     
     debug_env()
@@ -279,7 +286,7 @@ def main():
         try:
             print(f"\nSending item {i+1}/{len(items_to_send)}")
             print(f"Title: {item['title']}")
-            print(f"Description: {item['description'][:50]}...")  # Show first 50 chars
+            print(f"Clean description: {item['description']}")
             
             # Gửi tin nhắn
             if send_telegram_message(item['title'], item['description'], item['link']):
